@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import Link from 'next/link';
 import { ADMIN_COOKIE, verifySession } from '../../lib/adminAuth.js';
 import { db } from '../../lib/db.js';
 import { utcToIst, istToUtc, fmtDate, fmtTime, todayIst, addDays, toMin } from '../../lib/time.js';
@@ -63,8 +64,11 @@ export default async function AdminPage({ searchParams }) {
     if (filter !== 'all') base.filter = filter;
     if (q) base.q = q;
     if (selPhone) base.phone = selPhone;
-    const p = new URLSearchParams({ ...base, ...overrides });
-    for (const k of [...p.keys()]) if (p.get(k) === '') p.delete(k);
+    const merged = { ...base, ...overrides };
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(merged)) {
+      if (v !== undefined && v !== null && v !== '') p.set(k, v);
+    }
     return `/admin?${p.toString()}`;
   };
 
@@ -129,9 +133,9 @@ export default async function AdminPage({ searchParams }) {
         {salons.length > 1 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '0 8px' }}>
             {salons.map((s) => (
-              <a key={s.id} href={qs({ salon: s.id })} style={{ fontSize: 13, textDecoration: 'none', color: s.id === salonId ? ACCENT_DARK : '#5B6170', fontWeight: s.id === salonId ? 600 : 400 }}>
+              <Link key={s.id} href={qs({ salon: s.id })} style={{ fontSize: 13, textDecoration: 'none', color: s.id === salonId ? ACCENT_DARK : '#5B6170', fontWeight: s.id === salonId ? 600 : 400 }}>
                 {s.name}
-              </a>
+              </Link>
             ))}
           </div>
         )}
@@ -140,14 +144,15 @@ export default async function AdminPage({ searchParams }) {
           {navDefs.map((n) => {
             const on = activeTab === n.key;
             return (
-              <a
+              <Link
                 key={n.key}
                 href={qs({ tab: n.key, filter: undefined, q: undefined, phone: undefined })}
+                prefetch
                 style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 44, padding: '0 12px', borderRadius: 8, textDecoration: 'none', fontSize: 14, background: on ? ACCENT : 'transparent', color: on ? '#FFFFFF' : '#3A3F4A', fontWeight: on ? 600 : 500 }}
               >
                 <Icon path={n.icon} />
                 <span>{n.label}</span>
-              </a>
+              </Link>
             );
           })}
         </nav>
@@ -173,13 +178,13 @@ export default async function AdminPage({ searchParams }) {
             <div style={{ color: '#5B6170' }}>{subs[activeTab]}</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#FFFFFF', border: '1px solid #E3E5E8', borderRadius: 10, padding: 4 }}>
-            <a href={qs({ day: addDays(dayIso, -1) })} aria-label="Previous day" style={{ width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, color: '#16181D', textDecoration: 'none' }}>
+            <Link href={qs({ day: addDays(dayIso, -1) })} prefetch aria-label="Previous day" style={{ width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, color: '#16181D', textDecoration: 'none' }}>
               <Icon path="M15 18l-6-6 6-6" />
-            </a>
+            </Link>
             <div style={{ minWidth: 130, textAlign: 'center', fontWeight: 600 }}>{isToday ? 'Today' : fmtDate(dayIso)}</div>
-            <a href={qs({ day: addDays(dayIso, 1) })} aria-label="Next day" style={{ width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, color: '#16181D', textDecoration: 'none' }}>
+            <Link href={qs({ day: addDays(dayIso, 1) })} prefetch aria-label="Next day" style={{ width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, color: '#16181D', textDecoration: 'none' }}>
               <Icon path="M9 18l6-6 6-6" />
-            </a>
+            </Link>
           </div>
         </div>
 
@@ -194,7 +199,7 @@ export default async function AdminPage({ searchParams }) {
         </div>
 
         {activeTab === 'calendar' && <CalendarView items={items} staff={staff} salon={salon} qs={qs} />}
-        {activeTab === 'bookings' && <BookingsView items={items} filter={filter} q={q} qs={qs} salonId={salonId} />}
+        {activeTab === 'bookings' && <BookingsView items={items} filter={filter} q={q} qs={qs} salonId={salonId} dayIso={dayIso} />}
         {activeTab === 'chat' && <ChatView items={items} selPhone={selPhone} dayIso={dayIso} isToday={isToday} qs={qs} salonId={salonId} />}
         {activeTab === 'talk' && <TalkView handoffs={handoffs} salonId={salonId} />}
       </main>
@@ -222,8 +227,13 @@ function CalendarView({ items, staff, salon, qs }) {
     const count = mine.filter((i) => i.status !== 'cancelled').length;
     return { ...s, items: mine, countLabel: `${count} ${count === 1 ? 'booking' : 'bookings'}` };
   });
+  const unassigned = items.filter((i) => !i.staff_id);
+  if (unassigned.length > 0) {
+    const count = unassigned.filter((i) => i.status !== 'cancelled').length;
+    staffCols.push({ id: 'unassigned', name: 'Unassigned', items: unassigned, countLabel: `${count} ${count === 1 ? 'booking' : 'bookings'}` });
+  }
 
-  const legend = ['confirmed', 'pending', 'noshow', 'cancelled'];
+  const legend = ['confirmed', 'pending', 'completed', 'noshow', 'cancelled'];
 
   return (
     <section style={{ background: '#FFFFFF', border: '1px solid #E3E5E8', borderRadius: 12, padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -261,12 +271,12 @@ function CalendarView({ items, staff, salon, qs }) {
                   const top = (b.startMin - startHour * 60) / 60 * HOUR_PX + 2;
                   const h = Math.max((b.endMin - b.startMin) / 60 * HOUR_PX - 4, 24);
                   return (
-                    <a key={b.id} href={qs({ tab: 'chat', phone: b.customer_phone })} aria-label={`${b.customer_name || b.customer_phone}, ${b.service_name}, ${b.st.label}. Open chat`}
+                    <Link key={b.id} href={qs({ tab: 'chat', phone: b.customer_phone })} aria-label={`${b.customer_name || b.customer_phone}, ${b.service_name}, ${b.st.label}. Open chat`}
                        style={{ position: 'absolute', left: 4, right: 4, top, height: h, boxSizing: 'border-box', overflow: 'hidden', textAlign: 'left', cursor: 'pointer', border: 0, borderLeft: `4px solid ${b.st.bar}`, borderRadius: 6, background: b.st.bg, color: b.st.fg, padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12, lineHeight: 1.3, textDecoration: 'none' }}>
                       <span style={{ fontWeight: 600, textDecoration: b.status === 'cancelled' ? 'line-through' : 'none' }}>{b.customer_name || b.customer_phone}</span>
                       <span>{b.service_name}</span>
                       <span>{fmtTime(toMinLabel(b.startMin))} – {fmtTime(toMinLabel(b.endMin))}</span>
-                    </a>
+                    </Link>
                   );
                 })}
               </div>
@@ -285,7 +295,7 @@ function toMinLabel(min) {
   return `${h}:${m}`;
 }
 
-function BookingsView({ items, filter, q, qs, salonId }) {
+function BookingsView({ items, filter, q, qs, salonId, dayIso }) {
   const filterDefs = [
     { key: 'all', label: 'All' },
     { key: 'confirmed', label: 'Confirmed' },
@@ -308,15 +318,16 @@ function BookingsView({ items, filter, q, qs, salonId }) {
           {filterDefs.map((f) => {
             const on = filter === f.key;
             return (
-              <a key={f.key} href={qs({ filter: f.key === 'all' ? undefined : f.key })} style={{ minHeight: 36, padding: '8px 14px', borderRadius: 999, cursor: 'pointer', fontSize: 13, border: `1px solid ${on ? ACCENT : '#C9CDD3'}`, background: on ? ACCENT : '#FFFFFF', color: on ? '#FFFFFF' : '#16181D', fontWeight: on ? 600 : 400, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+              <Link key={f.key} href={qs({ filter: f.key === 'all' ? undefined : f.key })} prefetch style={{ minHeight: 36, padding: '8px 14px', borderRadius: 999, cursor: 'pointer', fontSize: 13, border: `1px solid ${on ? ACCENT : '#C9CDD3'}`, background: on ? ACCENT : '#FFFFFF', color: on ? '#FFFFFF' : '#16181D', fontWeight: on ? 600 : 400, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
                 {f.label}
-              </a>
+              </Link>
             );
           })}
         </div>
         <form method="GET" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <input type="hidden" name="salon" value={salonId} />
           <input type="hidden" name="tab" value="bookings" />
+          <input type="hidden" name="day" value={dayIso} />
           {filter !== 'all' && <input type="hidden" name="filter" value={filter} />}
           <label htmlFor="search" style={{ fontSize: 12, color: '#5B6170' }}>Search customer</label>
           <input id="search" name="q" type="search" defaultValue={q} placeholder="Name, phone or booking #" style={{ height: 40, width: 220, boxSizing: 'border-box', padding: '0 12px', border: '1px solid #C9CDD3', borderRadius: 8, fontSize: 14, fontFamily: 'inherit' }} />
@@ -340,7 +351,7 @@ function BookingsView({ items, filter, q, qs, salonId }) {
                   <div style={{ fontSize: 12, color: '#5B6170' }}>{r.customer_phone}</div>
                 </td>
                 <td style={{ padding: '12px 8px' }}>{r.service_name}</td>
-                <td style={{ padding: '12px 8px' }}>{r.staff_name}</td>
+                <td style={{ padding: '12px 8px', color: r.staff_name ? 'inherit' : '#9AA0AA' }}>{r.staff_name || 'Unassigned'}</td>
                 <td style={{ padding: '12px 8px', whiteSpace: 'nowrap' }}>{fmtTime(toMinLabel(r.startMin))} – {fmtTime(toMinLabel(r.endMin))}</td>
                 <td style={{ padding: '12px 8px' }}>{rupees(r.price)}</td>
                 <td style={{ padding: '12px 8px' }}>{SOURCE_LABEL[r.source] || r.source || '—'}</td>
@@ -349,7 +360,7 @@ function BookingsView({ items, filter, q, qs, salonId }) {
                 </td>
                 <td style={{ padding: '12px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                   <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                    <a href={qs({ tab: 'chat', phone: r.customer_phone })} style={actionBtn}>Chat</a>
+                    <Link href={qs({ tab: 'chat', phone: r.customer_phone })} style={actionBtn}>Chat</Link>
                     {r.status === 'confirmed' && (
                       <>
                         <form action={cancelBookingAction}>
@@ -400,7 +411,7 @@ async function ChatView({ items, selPhone, dayIso, isToday, qs, salonId }) {
         <h2 style={{ margin: '8px 8px 4px', fontSize: 14, fontWeight: 600 }}>Conversations · {isToday ? 'Today' : fmtDate(dayIso)}</h2>
         {withChat.length === 0 && <div style={{ padding: 16, color: '#5B6170', fontSize: 13 }}>No bookings on this day.</div>}
         {withChat.map((cv) => (
-          <a key={cv.id} href={qs({ phone: cv.customer_phone })} style={{ display: 'flex', flexDirection: 'column', gap: 4, textAlign: 'left', borderRadius: 8, padding: '10px 12px', cursor: 'pointer', background: sel && sel.id === cv.id ? '#EEF6F4' : 'transparent', color: '#16181D', textDecoration: 'none' }}>
+          <Link key={cv.id} href={qs({ phone: cv.customer_phone })} style={{ display: 'flex', flexDirection: 'column', gap: 4, textAlign: 'left', borderRadius: 8, padding: '10px 12px', cursor: 'pointer', background: sel && sel.id === cv.id ? '#EEF6F4' : 'transparent', color: '#16181D', textDecoration: 'none' }}>
             <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8, width: '100%' }}>
               <span style={{ fontWeight: 600 }}>{cv.customer_name || cv.customer_phone}</span>
               <span style={{ fontSize: 12, color: '#5B6170' }}>{fmtTime(toMinLabel(cv.startMin))}</span>
@@ -410,7 +421,7 @@ async function ChatView({ items, selPhone, dayIso, isToday, qs, salonId }) {
               <span style={{ color: cv.st.fg, fontWeight: 500 }}>{cv.st.label}</span>
             </span>
             <span style={{ fontSize: 11, color: '#5B6170' }}>{SOURCE_LABEL[cv.source] || cv.source}</span>
-          </a>
+          </Link>
         ))}
       </div>
       <div style={{ flex: '999 1 380px', minWidth: 0, background: '#FFFFFF', border: '1px solid #E3E5E8', borderRadius: 12, display: 'flex', flexDirection: 'column' }}>
@@ -419,7 +430,7 @@ async function ChatView({ items, selPhone, dayIso, isToday, qs, salonId }) {
             <div style={{ padding: '16px 20px', borderBottom: '1px solid #E3E5E8', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <div style={{ fontWeight: 600, fontSize: 16 }}>{sel.customer_name || sel.customer_phone}</div>
-                <div style={{ fontSize: 12, color: '#5B6170' }}>{sel.customer_phone} · B{sel.ref_no} · {sel.service_name} with {sel.staff_name}</div>
+                <div style={{ fontSize: 12, color: '#5B6170' }}>{sel.customer_phone} · B{sel.ref_no} · {sel.service_name}{sel.staff_name ? ` with ${sel.staff_name}` : ' · no stylist assigned yet'}</div>
               </div>
               <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 999, fontSize: 12, fontWeight: 500, background: sel.st.bg, color: sel.st.fg }}>{sel.st.label}</span>
             </div>
